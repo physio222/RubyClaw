@@ -1,8 +1,10 @@
 import { Feather } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
-import React, { useState, useCallback } from "react";
+import * as FileSystem from "expo-file-system";
+import React, { useCallback, useEffect, useState } from "react";
 import {
-  Animated,
+  Alert,
   Platform,
   Pressable,
   ScrollView,
@@ -18,13 +20,14 @@ interface ModelInfo {
   id: string;
   name: string;
   family: string;
-  size: string;
-  sizeBytes: number;
+  displaySize: string;
+  bytesApprox: number;
   description: string;
   quantization: string;
   context: string;
   tags: string[];
   downloadUrl: string;
+  filename: string;
 }
 
 const MODELS: ModelInfo[] = [
@@ -32,248 +35,198 @@ const MODELS: ModelInfo[] = [
     id: "gemma-4-2b",
     name: "Gemma 4 2B",
     family: "Gemma",
-    size: "1.4 GB",
-    sizeBytes: 1400,
-    description: "Google's lightweight Gemma 4 model, optimized for on-device inference. Great for general tasks.",
+    displaySize: "1.4 GB",
+    bytesApprox: 1_400_000_000,
+    description: "Google's lightweight Gemma 4 model, optimized for on-device inference.",
     quantization: "Q4_K_M",
     context: "8K",
     tags: ["Fast", "Lightweight", "Google"],
-    downloadUrl: "https://huggingface.co/google/gemma-4-2b-it-qat-q4_0-gguf",
-  },
-  {
-    id: "gemma-4-4b",
-    name: "Gemma 4 4B",
-    family: "Gemma",
-    size: "2.6 GB",
-    sizeBytes: 2600,
-    description: "Larger Gemma 4 variant with stronger reasoning. Requires more RAM but produces better outputs.",
-    quantization: "Q4_K_M",
-    context: "8K",
-    tags: ["Balanced", "Reasoning", "Google"],
-    downloadUrl: "https://huggingface.co/google/gemma-4-4b-it-qat-q4_0-gguf",
+    filename: "gemma-4-2b-q4_k_m.gguf",
+    downloadUrl: "https://huggingface.co/google/gemma-4-2b-it-qat-q4_0-gguf/resolve/main/gemma-4-2b-it-qat-q4_0.gguf",
   },
   {
     id: "qwen-1.5b",
     name: "Qwen 3.5 1.5B",
     family: "Qwen",
-    size: "1.1 GB",
-    sizeBytes: 1100,
-    description: "Alibaba's compact Qwen model. Excellent for coding and instruction following on constrained hardware.",
+    displaySize: "1.1 GB",
+    bytesApprox: 1_100_000_000,
+    description: "Alibaba's compact Qwen model. Excellent 32K context window.",
     quantization: "Q4_K_S",
     context: "32K",
     tags: ["Coding", "Fast", "Alibaba"],
-    downloadUrl: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF",
+    filename: "qwen2.5-1.5b-instruct-q4_k_m.gguf",
+    downloadUrl: "https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf",
   },
   {
     id: "deepseek-r1-1.5b",
     name: "DeepSeek R1 1.5B",
     family: "DeepSeek",
-    size: "1.0 GB",
-    sizeBytes: 1000,
-    description: "DeepSeek's reasoning-first model with chain-of-thought. Outstanding math and logic performance.",
+    displaySize: "1.0 GB",
+    bytesApprox: 1_000_000_000,
+    description: "DeepSeek's reasoning model. Outstanding math & chain-of-thought.",
     quantization: "Q4_K_M",
     context: "64K",
     tags: ["Reasoning", "Math", "Chain-of-Thought"],
-    downloadUrl: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B-GGUF",
+    filename: "deepseek-r1-distill-qwen-1.5b-q4_k_m.gguf",
+    downloadUrl: "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-1.5B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-1.5B-Q4_K_M.gguf",
   },
   {
     id: "deepseek-r1-7b",
     name: "DeepSeek R1 7B",
     family: "DeepSeek",
-    size: "4.8 GB",
-    sizeBytes: 4800,
-    description: "Full-sized DeepSeek R1 reasoning model. Best local performance for complex analytical tasks.",
+    displaySize: "4.8 GB",
+    bytesApprox: 4_800_000_000,
+    description: "Full DeepSeek R1 reasoning model. Best for complex analysis.",
     quantization: "Q4_K_M",
     context: "64K",
     tags: ["Powerful", "Reasoning", "Large"],
-    downloadUrl: "https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-GGUF",
+    filename: "deepseek-r1-distill-qwen-7b-q4_k_m.gguf",
+    downloadUrl: "https://huggingface.co/bartowski/DeepSeek-R1-Distill-Qwen-7B-GGUF/resolve/main/DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
   },
   {
     id: "phi-3.5-mini",
     name: "Phi 3.5 Mini",
     family: "Phi",
-    size: "2.2 GB",
-    sizeBytes: 2200,
-    description: "Microsoft's highly capable 3.8B model. Punches far above its weight class for instruction following.",
+    displaySize: "2.2 GB",
+    bytesApprox: 2_200_000_000,
+    description: "Microsoft's 3.8B model with 128K context. Punches above its weight.",
     quantization: "Q4_K_M",
     context: "128K",
     tags: ["Microsoft", "Long Context", "Efficient"],
-    downloadUrl: "https://huggingface.co/microsoft/Phi-3.5-mini-instruct-gguf",
+    filename: "phi-3.5-mini-instruct-q4_k_m.gguf",
+    downloadUrl: "https://huggingface.co/bartowski/Phi-3.5-mini-instruct-GGUF/resolve/main/Phi-3.5-mini-instruct-Q4_K_M.gguf",
   },
 ];
 
-type DownloadStatus = "idle" | "downloading" | "installed" | "loading";
+const FAMILY_COLORS: Record<string, string> = {
+  Gemma: "#4285F4",
+  Qwen: "#FF6B00",
+  DeepSeek: "#6C63FF",
+  Phi: "#00B4D8",
+};
+
+const MODELS_DIR = FileSystem.documentDirectory + "rubyclaw_models/";
+const MODEL_STATUS_KEY = "rubyclaw_model_status";
+
+interface ModelStatus {
+  path?: string;
+  downloadedBytes?: number;
+  totalBytes?: number;
+  status: "idle" | "downloading" | "paused" | "complete" | "error";
+  error?: string;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+}
 
 interface ModelCardProps {
   model: ModelInfo;
-  isSelected: boolean;
-  onSelect: () => void;
+  status: ModelStatus;
+  isActive: boolean;
+  onActivate: () => void;
+  onDownload: () => void;
+  onPause: () => void;
+  onDelete: () => void;
 }
 
-function ModelCard({ model, isSelected, onSelect }: ModelCardProps) {
+function ModelCard({ model, status, isActive, onActivate, onDownload, onPause, onDelete }: ModelCardProps) {
   const colors = useColors();
-  const [status, setStatus] = useState<DownloadStatus>("idle");
-  const [progress, setProgress] = useState(0);
-  const progressAnim = React.useRef(new Animated.Value(0)).current;
-
-  const familyColor: Record<string, string> = {
-    Gemma: "#4285F4",
-    Qwen: "#FF6B00",
-    DeepSeek: "#6C63FF",
-    Phi: "#00B4D8",
-  };
-
-  const handleAction = useCallback(async () => {
-    if (status === "downloading") return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    if (status === "installed") {
-      onSelect();
-      return;
-    }
-
-    setStatus("downloading");
-    setProgress(0);
-
-    // Simulate download progress
-    let p = 0;
-    const interval = setInterval(() => {
-      p += Math.random() * 8 + 2;
-      if (p >= 100) {
-        p = 100;
-        clearInterval(interval);
-        setStatus("installed");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      }
-      setProgress(Math.min(p, 100));
-      Animated.timing(progressAnim, {
-        toValue: Math.min(p, 100) / 100,
-        duration: 200,
-        useNativeDriver: false,
-      }).start();
-    }, 200);
-  }, [status, onSelect]);
-
-  const color = familyColor[model.family] || colors.primary;
+  const color = FAMILY_COLORS[model.family] || colors.primary;
+  const progress = status.totalBytes && status.downloadedBytes
+    ? Math.min(status.downloadedBytes / status.totalBytes, 1)
+    : 0;
 
   return (
-    <View
-      style={[
-        styles.card,
-        {
-          backgroundColor: colors.card,
-          borderColor: isSelected ? colors.primary : colors.border,
-          borderWidth: isSelected ? 1.5 : 1,
-        },
-      ]}
-    >
-      {isSelected && (
-        <View style={[styles.selectedBadge, { backgroundColor: colors.primary }]}>
-          <Text style={styles.selectedBadgeText}>ACTIVE</Text>
+    <View style={[cardStyles.root, {
+      backgroundColor: colors.card,
+      borderColor: isActive ? colors.primary : colors.border,
+      borderWidth: isActive ? 1.5 : 1,
+    }]}>
+      {isActive && (
+        <View style={[cardStyles.activeBadge, { backgroundColor: colors.primary }]}>
+          <Text style={cardStyles.activeBadgeText}>ACTIVE</Text>
         </View>
       )}
 
-      <View style={styles.cardHeader}>
-        <View style={[styles.familyBadge, { backgroundColor: color + "22" }]}>
-          <Text style={[styles.familyText, { color }]}>{model.family}</Text>
+      <View style={cardStyles.topRow}>
+        <View style={[cardStyles.familyChip, { backgroundColor: color + "22" }]}>
+          <Text style={[cardStyles.familyText, { color }]}>{model.family}</Text>
         </View>
-        <View style={styles.metaRow}>
-          <Text style={[styles.metaText, { color: colors.mutedForeground }]}>
-            {model.quantization}
-          </Text>
-          <Text style={[styles.metaDot, { color: colors.border }]}>·</Text>
-          <Text style={[styles.metaText, { color: colors.mutedForeground }]}>
-            {model.context} ctx
-          </Text>
-          <Text style={[styles.metaDot, { color: colors.border }]}>·</Text>
-          <Text style={[styles.metaText, { color: colors.mutedForeground }]}>
-            {model.size}
-          </Text>
-        </View>
+        <Text style={[cardStyles.meta, { color: colors.mutedForeground }]}>
+          {model.quantization} · {model.context} · {model.displaySize}
+        </Text>
       </View>
 
-      <Text style={[styles.cardTitle, { color: colors.foreground }]}>{model.name}</Text>
-      <Text style={[styles.cardDesc, { color: colors.mutedForeground }]}>{model.description}</Text>
+      <Text style={[cardStyles.name, { color: colors.foreground }]}>{model.name}</Text>
+      <Text style={[cardStyles.desc, { color: colors.mutedForeground }]}>{model.description}</Text>
 
-      <View style={styles.tagRow}>
-        {model.tags.map((tag) => (
-          <View key={tag} style={[styles.tag, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
-            <Text style={[styles.tagText, { color: colors.secondaryForeground }]}>{tag}</Text>
+      <View style={cardStyles.tags}>
+        {model.tags.map((t) => (
+          <View key={t} style={[cardStyles.tag, { backgroundColor: colors.secondary, borderColor: colors.border }]}>
+            <Text style={[cardStyles.tagText, { color: colors.secondaryForeground }]}>{t}</Text>
           </View>
         ))}
       </View>
 
-      {status === "downloading" && (
-        <View style={styles.progressContainer}>
-          <View style={[styles.progressTrack, { backgroundColor: colors.secondary }]}>
-            <Animated.View
-              style={[
-                styles.progressFill,
-                {
-                  backgroundColor: colors.primary,
-                  width: progressAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: ["0%", "100%"],
-                  }),
-                },
-              ]}
-            />
+      {/* Progress bar */}
+      {(status.status === "downloading" || status.status === "paused") && (
+        <View style={cardStyles.progressRow}>
+          <View style={[cardStyles.progressTrack, { backgroundColor: colors.secondary }]}>
+            <View style={[cardStyles.progressFill, { backgroundColor: colors.primary, width: `${(progress * 100).toFixed(0)}%` as `${number}%` }]} />
           </View>
-          <Text style={[styles.progressText, { color: colors.mutedForeground }]}>
-            {Math.round(progress)}%
+          <Text style={[cardStyles.progressText, { color: colors.mutedForeground }]}>
+            {formatBytes(status.downloadedBytes || 0)} / {formatBytes(model.bytesApprox)}
           </Text>
         </View>
       )}
 
-      <Pressable
-        onPress={handleAction}
-        style={({ pressed }) => [
-          styles.actionBtn,
-          {
-            backgroundColor:
-              status === "installed"
-                ? isSelected
-                  ? colors.success + "22"
-                  : colors.secondary
-                : status === "downloading"
-                  ? colors.secondary
-                  : colors.primary,
-            borderColor:
-              status === "installed"
-                ? isSelected
-                  ? colors.success
-                  : colors.border
-                : "transparent",
-            borderWidth: status === "installed" ? 1 : 0,
-          },
-          pressed && { opacity: 0.75 },
-        ]}
-      >
-        {status === "idle" && (
-          <>
+      {status.status === "error" && (
+        <Text style={[cardStyles.errorText, { color: colors.destructive }]}>
+          Error: {status.error}
+        </Text>
+      )}
+
+      {/* Action buttons */}
+      <View style={cardStyles.actions}>
+        {status.status === "idle" || status.status === "error" ? (
+          <Pressable onPress={onDownload} style={({ pressed }) => [cardStyles.btn, { backgroundColor: colors.primary }, pressed && { opacity: 0.8 }]}>
             <Feather name="download" size={14} color="#fff" />
-            <Text style={[styles.actionBtnText, { color: "#fff" }]}>Download</Text>
-          </>
-        )}
-        {status === "downloading" && (
+            <Text style={cardStyles.btnText}>Download</Text>
+          </Pressable>
+        ) : status.status === "downloading" ? (
+          <Pressable onPress={onPause} style={({ pressed }) => [cardStyles.btn, { backgroundColor: colors.warning + "22", borderColor: colors.warning, borderWidth: 1 }, pressed && { opacity: 0.8 }]}>
+            <Feather name="pause" size={14} color={colors.warning} />
+            <Text style={[cardStyles.btnText, { color: colors.warning }]}>Pause</Text>
+          </Pressable>
+        ) : status.status === "paused" ? (
+          <Pressable onPress={onDownload} style={({ pressed }) => [cardStyles.btn, { backgroundColor: colors.accent + "22", borderColor: colors.accent, borderWidth: 1 }, pressed && { opacity: 0.8 }]}>
+            <Feather name="play" size={14} color={colors.accent} />
+            <Text style={[cardStyles.btnText, { color: colors.accent }]}>Resume</Text>
+          </Pressable>
+        ) : status.status === "complete" ? (
           <>
-            <Feather name="loader" size={14} color={colors.mutedForeground} />
-            <Text style={[styles.actionBtnText, { color: colors.mutedForeground }]}>Downloading...</Text>
+            {!isActive && (
+              <Pressable onPress={onActivate} style={({ pressed }) => [cardStyles.btn, { backgroundColor: colors.success + "22", borderColor: colors.success, borderWidth: 1 }, pressed && { opacity: 0.8 }]}>
+                <Feather name="check-circle" size={14} color={colors.success} />
+                <Text style={[cardStyles.btnText, { color: colors.success }]}>Use Model</Text>
+              </Pressable>
+            )}
+            {isActive && (
+              <View style={[cardStyles.btn, { backgroundColor: colors.success + "22", borderColor: colors.success, borderWidth: 1 }]}>
+                <Feather name="cpu" size={14} color={colors.success} />
+                <Text style={[cardStyles.btnText, { color: colors.success }]}>Loaded</Text>
+              </View>
+            )}
+            <Pressable onPress={onDelete} style={({ pressed }) => [cardStyles.iconBtn, pressed && { opacity: 0.6 }]}>
+              <Feather name="trash-2" size={16} color={colors.destructive} />
+            </Pressable>
           </>
-        )}
-        {status === "installed" && !isSelected && (
-          <>
-            <Feather name="check-circle" size={14} color={colors.success} />
-            <Text style={[styles.actionBtnText, { color: colors.success }]}>Use Model</Text>
-          </>
-        )}
-        {status === "installed" && isSelected && (
-          <>
-            <Feather name="cpu" size={14} color={colors.success} />
-            <Text style={[styles.actionBtnText, { color: colors.success }]}>Loaded</Text>
-          </>
-        )}
-      </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -281,123 +234,257 @@ function ModelCard({ model, isSelected, onSelect }: ModelCardProps) {
 export default function ModelsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { selectedModel, setSelectedModel } = useAgent();
+  const { localServerUrl, setLocalServerUrl } = useAgent();
+  const [modelStatuses, setModelStatuses] = useState<Record<string, ModelStatus>>({});
+  const [activeModelId, setActiveModelId] = useState<string | null>(null);
+  const downloadRefs = useRef<Record<string, FileSystem.DownloadResumable | null>>({});
+
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const bottomPad = Platform.OS === "web" ? 84 + 34 : insets.bottom + 84;
 
+  useEffect(() => {
+    loadPersistedStatuses();
+  }, []);
+
+  async function loadPersistedStatuses() {
+    try {
+      // Ensure model directory exists
+      await FileSystem.makeDirectoryAsync(MODELS_DIR, { intermediates: true }).catch(() => {});
+      const raw = await AsyncStorage.getItem(MODEL_STATUS_KEY);
+      if (raw) {
+        const statuses: Record<string, ModelStatus> = JSON.parse(raw);
+        // Verify downloaded files still exist
+        for (const [id, s] of Object.entries(statuses)) {
+          if (s.status === "complete" && s.path) {
+            const info = await FileSystem.getInfoAsync(s.path).catch(() => ({ exists: false }));
+            if (!info.exists) {
+              statuses[id] = { status: "idle" };
+            }
+          }
+        }
+        setModelStatuses(statuses);
+      }
+      const activeId = await AsyncStorage.getItem("rubyclaw_active_model");
+      if (activeId) setActiveModelId(activeId);
+    } catch {}
+  }
+
+  async function persistStatuses(updated: Record<string, ModelStatus>) {
+    try {
+      await AsyncStorage.setItem(MODEL_STATUS_KEY, JSON.stringify(updated));
+    } catch {}
+  }
+
+  function updateStatus(id: string, patch: Partial<ModelStatus>) {
+    setModelStatuses((prev) => {
+      const updated = { ...prev, [id]: { ...(prev[id] || { status: "idle" }), ...patch } };
+      persistStatuses(updated);
+      return updated;
+    });
+  }
+
+  const handleDownload = useCallback(async (model: ModelInfo) => {
+    if (Platform.OS === "web") {
+      Alert.alert("Web Not Supported", "Model downloads require the native app (Expo Go or custom build). Please test on your Android device.");
+      return;
+    }
+
+    const destPath = MODELS_DIR + model.filename;
+    updateStatus(model.id, { status: "downloading", downloadedBytes: 0, totalBytes: model.bytesApprox, path: destPath });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    try {
+      await FileSystem.makeDirectoryAsync(MODELS_DIR, { intermediates: true }).catch(() => {});
+
+      const dl = FileSystem.createDownloadResumable(
+        model.downloadUrl,
+        destPath,
+        {},
+        (progress) => {
+          updateStatus(model.id, {
+            status: "downloading",
+            downloadedBytes: progress.totalBytesWritten,
+            totalBytes: progress.totalBytesExpectedToWrite || model.bytesApprox,
+          });
+        }
+      );
+      downloadRefs.current[model.id] = dl;
+
+      const result = await dl.downloadAsync();
+      downloadRefs.current[model.id] = null;
+
+      if (result?.uri) {
+        updateStatus(model.id, { status: "complete", path: result.uri, downloadedBytes: model.bytesApprox, totalBytes: model.bytesApprox });
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert(
+          "Download Complete",
+          `${model.name} downloaded to device storage.\n\nTo run it locally, start a llama.cpp server pointing to:\n${result.uri}\n\nThen set the server URL in Settings.`,
+          [{ text: "OK" }]
+        );
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!msg.includes("cancel") && !msg.includes("abort")) {
+        updateStatus(model.id, { status: "error", error: msg });
+        Alert.alert("Download Failed", msg);
+      } else {
+        updateStatus(model.id, { status: "paused" });
+      }
+    }
+  }, []);
+
+  const handlePause = useCallback(async (model: ModelInfo) => {
+    const dl = downloadRefs.current[model.id];
+    if (dl) {
+      try {
+        await dl.pauseAsync();
+        downloadRefs.current[model.id] = null;
+        updateStatus(model.id, { status: "paused" });
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      } catch {}
+    }
+  }, []);
+
+  const handleDelete = useCallback((model: ModelInfo) => {
+    Alert.alert("Delete Model", `Remove "${model.name}" from device?`, [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          const status = modelStatuses[model.id];
+          if (status?.path) {
+            await FileSystem.deleteAsync(status.path, { idempotent: true }).catch(() => {});
+          }
+          updateStatus(model.id, { status: "idle", path: undefined, downloadedBytes: 0 });
+          if (activeModelId === model.id) {
+            setActiveModelId(null);
+            await AsyncStorage.removeItem("rubyclaw_active_model");
+            setLocalServerUrl("");
+          }
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        },
+      },
+    ]);
+  }, [modelStatuses, activeModelId]);
+
+  const handleActivate = useCallback(async (model: ModelInfo) => {
+    setActiveModelId(model.id);
+    await AsyncStorage.setItem("rubyclaw_active_model", model.id);
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    Alert.alert(
+      "Model Ready",
+      `${model.name} is ready. Set your llama.cpp server URL in Settings > Local Server to run inference on this model.`,
+      [{ text: "OK" }]
+    );
+  }, []);
+
+  const downloadedCount = Object.values(modelStatuses).filter((s) => s.status === "complete").length;
+
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { paddingTop: topPad + 8, borderBottomColor: colors.border }]}>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Model Manager</Text>
-        <Text style={[styles.headerSub, { color: colors.mutedForeground }]}>
-          Download & manage local LLMs
+    <View style={[rootStyles.root, { backgroundColor: colors.background }]}>
+      <View style={[rootStyles.header, { paddingTop: topPad + 8, borderBottomColor: colors.border }]}>
+        <Text style={[rootStyles.title, { color: colors.foreground }]}>Model Manager</Text>
+        <Text style={[rootStyles.sub, { color: colors.mutedForeground }]}>
+          Download real GGUF models to your device
         </Text>
       </View>
 
-      <View style={[styles.activeCard, { backgroundColor: colors.card, borderColor: colors.primary + "44" }]}>
-        <View style={styles.activeRow}>
-          <View style={[styles.activeDot, { backgroundColor: colors.success }]} />
-          <Text style={[styles.activeLabel, { color: colors.mutedForeground }]}>Cloud API Active</Text>
+      <ScrollView contentContainerStyle={[rootStyles.content, { paddingBottom: bottomPad }]} showsVerticalScrollIndicator={false}>
+        {/* Status summary */}
+        <View style={[rootStyles.summary, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={rootStyles.summaryRow}>
+            <View style={[rootStyles.summaryDot, { backgroundColor: downloadedCount > 0 ? colors.success : colors.warning }]} />
+            <Text style={[rootStyles.summaryText, { color: colors.foreground }]}>
+              {downloadedCount > 0
+                ? `${downloadedCount} model${downloadedCount > 1 ? "s" : ""} on device`
+                : "No local models downloaded"}
+            </Text>
+          </View>
+          <Text style={[rootStyles.summaryNote, { color: colors.mutedForeground }]}>
+            {localServerUrl
+              ? `Local server: ${localServerUrl}`
+              : "Using Replit AI (cloud) — set local server URL in Settings for on-device inference"}
+          </Text>
         </View>
-        <Text style={[styles.activeModel, { color: colors.foreground }]}>{selectedModel}</Text>
-        <Text style={[styles.activeNote, { color: colors.mutedForeground }]}>
-          Download a local model below to run inference on-device
-        </Text>
-      </View>
 
-      <ScrollView
-        contentContainerStyle={[styles.list, { paddingBottom: bottomPad }]}
-        showsVerticalScrollIndicator={false}
-      >
+        {/* Model cards */}
         {MODELS.map((m) => (
           <ModelCard
             key={m.id}
             model={m}
-            isSelected={selectedModel === m.id}
-            onSelect={() => {
-              setSelectedModel(m.id);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-            }}
+            status={modelStatuses[m.id] || { status: "idle" }}
+            isActive={activeModelId === m.id}
+            onActivate={() => handleActivate(m)}
+            onDownload={() => handleDownload(m)}
+            onPause={() => handlePause(m)}
+            onDelete={() => handleDelete(m)}
           />
         ))}
 
-        <View style={[styles.infoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        {/* Info box */}
+        <View style={[rootStyles.infoBox, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Feather name="info" size={16} color={colors.mutedForeground} />
-          <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-            Local model execution requires MLC-LLM or llama.cpp native bindings. Downloads are simulated in this build. Add your OpenAI API key in Settings to use cloud inference.
-          </Text>
+          <View style={{ flex: 1, gap: 4 }}>
+            <Text style={[rootStyles.infoTitle, { color: colors.foreground }]}>
+              How local inference works
+            </Text>
+            <Text style={[rootStyles.infoText, { color: colors.mutedForeground }]}>
+              1. Download a GGUF model above (saved to your device){"\n"}
+              2. Run llama.cpp server on your PC: {"\n"}
+              {"   "}./llama-server -m model.gguf --port 8080{"\n"}
+              3. Set the server URL in Settings → Local Server{"\n"}
+              4. All chat requests will use your local model
+            </Text>
+            <Text style={[rootStyles.infoNote, { color: colors.accent }]}>
+              Direct on-device inference requires a custom native build (EAS Build). Expo Go supports downloads only.
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
+const rootStyles = StyleSheet.create({
   root: { flex: 1 },
-  header: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-  },
-  headerTitle: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  headerSub: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
-  activeCard: {
-    margin: 16,
-    padding: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-  },
-  activeRow: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 },
-  activeDot: { width: 8, height: 8, borderRadius: 4 },
-  activeLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
-  activeModel: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  activeNote: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 4 },
-  list: { padding: 16, gap: 14 },
-  card: {
-    borderRadius: 16,
-    padding: 16,
-    gap: 10,
-  },
-  selectedBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-    marginBottom: -4,
-  },
-  selectedBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: 1 },
-  cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
-  familyBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  header: { paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  title: { fontSize: 24, fontFamily: "Inter_700Bold" },
+  sub: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
+  content: { padding: 16, gap: 14 },
+  summary: { borderRadius: 14, padding: 14, borderWidth: 1, gap: 6 },
+  summaryRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  summaryDot: { width: 8, height: 8, borderRadius: 4 },
+  summaryText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  summaryNote: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
+  infoBox: { borderRadius: 14, padding: 14, borderWidth: 1, flexDirection: "row", gap: 10, marginTop: 4 },
+  infoTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  infoText: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  infoNote: { fontSize: 12, fontFamily: "Inter_500Medium", lineHeight: 18 },
+});
+
+const cardStyles = StyleSheet.create({
+  root: { borderRadius: 16, padding: 16, gap: 10 },
+  activeBadge: { alignSelf: "flex-start", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6, marginBottom: -4 },
+  activeBadgeText: { fontSize: 9, fontFamily: "Inter_700Bold", color: "#fff", letterSpacing: 1 },
+  topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  familyChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
   familyText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  metaText: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  metaDot: { fontSize: 11 },
-  cardTitle: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
-  cardDesc: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
-  tagRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  meta: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  name: { fontSize: 17, fontFamily: "Inter_600SemiBold" },
+  desc: { fontSize: 13, fontFamily: "Inter_400Regular", lineHeight: 19 },
+  tags: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   tag: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
   tagText: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  progressContainer: { flexDirection: "row", alignItems: "center", gap: 8 },
-  progressTrack: { flex: 1, height: 4, borderRadius: 2, overflow: "hidden" },
+  progressRow: { gap: 4 },
+  progressTrack: { height: 4, borderRadius: 2, overflow: "hidden" },
   progressFill: { height: "100%", borderRadius: 2 },
-  progressText: { fontSize: 12, fontFamily: "Inter_500Medium", width: 36, textAlign: "right" },
-  actionBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
-  },
-  actionBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  infoBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 4,
-  },
-  infoText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
+  progressText: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  errorText: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  actions: { flexDirection: "row", gap: 8, alignItems: "center" },
+  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingHorizontal: 16, paddingVertical: 9, borderRadius: 10, flex: 1 },
+  btnText: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: "#fff" },
+  iconBtn: { padding: 8 },
 });
+
+const { useRef } = React;

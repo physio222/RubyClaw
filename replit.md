@@ -28,17 +28,30 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 
 ## Artifacts
 
+### API Server
+- **Path**: `artifacts/api-server/`
+- **Routes**:
+  - `GET /api/health` — health check
+  - `POST /api/chat` — SSE streaming chat with OpenAI tool calling (web_search, fetch_url, create_note, set_alarm, open_app)
+  - `POST /api/search` — standalone DuckDuckGo + Jina web search
+- **AI**: Replit AI integration via `@workspace/integrations-openai-ai-server`, model `gpt-5.2`
+- **Agent Loop**: Server-side ReAct loop (max 6 iterations), uses OpenAI native function calling (not regex parsing) to eliminate infinite loops
+- **Web Search**: DuckDuckGo Instant Answers API + Jina Reader (https://r.jina.ai) for URL fetching
+
 ### RubyClaw (Mobile - Expo)
 - **Path**: `artifacts/rubyclaw/`
-- **Description**: Autonomous Agentic AI mobile app for Android
-- **Features**:
-  - Chat screen with ReAct agent loop (up to 5 tool calls per query)
-  - Model Manager with GGUF model listings (Gemma 4, Qwen, DeepSeek, Phi)
-  - Custom Skill Registry (API, action, prompt skill types)
-  - Settings with permission toggles, API key management, foreground service toggle
-  - Hidden WebView browser automation layer
-  - Web search via DuckDuckGo API
-  - AsyncStorage-based conversation history persistence
+- **Description**: Autonomous Agentic AI mobile app for Android with Claude-style UI
+- **Architecture**:
+  - AgentContext streams from backend `/api/chat` SSE endpoint (no client-side agent loop)
+  - Messages: user, assistant (with streaming cursor), tool_call, tool_result
+  - Conversation history persisted via AsyncStorage
+  - Local llama.cpp server support (OpenAI-compatible `/v1/chat/completions`)
+- **Screens**:
+  - **Chat** (`app/(tabs)/index.tsx`): Claude-style UI with markdown rendering (headers, bold, code blocks, bullets), file attachment (image picker), Web search toggle toolbar, streaming response display, suggestion cards on empty state
+  - **Models** (`app/(tabs)/models.tsx`): Real GGUF model downloads via `expo-file-system` (`createDownloadResumable`), pause/resume/delete, 5 models: Gemma 4 2B, Qwen 3.5 1.5B, DeepSeek R1 1.5B/7B, Phi 3.5 Mini
+  - **Skills** (`app/(tabs)/skills.tsx`): Custom skill registry (API, action, prompt types) with AsyncStorage persistence
+  - **Settings** (`app/(tabs)/settings.tsx`): Local llama.cpp server URL, web search toggle, Android permissions, background service toggle, quick app launcher
 - **Colors**: Dark theme (#0a0c10 bg, #e53935 red primary, #00e5ff cyan accent)
-- **AI**: Connects to OpenAI API (with built-in local simulation fallback)
-- **Agent Tools**: web_search, browser_navigate, browser_click, browser_fill, browser_extract, open_app, set_alarm, create_note, list_skills, use_skill
+- **Agent Tools (server-side)**: web_search (DuckDuckGo), fetch_url (Jina Reader), create_note, set_alarm, open_app
+- **Local Model Support**: Configure llama.cpp server URL in Settings; chat auto-routes to local server when set
+- **Model Downloads**: Real file downloads to `FileSystem.documentDirectory + 'rubyclaw_models/'`, tracked with progress callbacks

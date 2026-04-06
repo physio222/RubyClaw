@@ -3,27 +3,44 @@ import React, {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useRef,
   useState,
 } from "react";
 
-export type MessageRole = "user" | "agent" | "system" | "tool";
+export type MessageRole = "user" | "assistant" | "tool_call" | "tool_result";
+
+export interface CustomSkill {
+  id: string;
+  name: string;
+  description: string;
+  type: "api" | "action" | "prompt";
+  endpoint?: string;
+  action?: string;
+  promptTemplate?: string;
+  createdAt: number;
+}
+
+export interface Attachment {
+  name: string;
+  type: "image" | "file";
+  uri: string;
+  base64?: string;
+}
+
+export interface ToolEvent {
+  name: string;
+  args?: Record<string, unknown>;
+  result?: string;
+}
 
 export interface Message {
   id: string;
   role: MessageRole;
   content: string;
   timestamp: number;
-  toolName?: string;
+  attachments?: Attachment[];
+  toolEvent?: ToolEvent;
   isStreaming?: boolean;
-}
-
-export interface AgentTool {
-  name: string;
-  description: string;
-  parameters: Record<string, { type: string; description: string }>;
-  handler: (params: Record<string, string>) => Promise<string>;
 }
 
 export interface Conversation {
@@ -35,80 +52,56 @@ export interface Conversation {
 
 interface AgentContextValue {
   messages: Message[];
-  isThinking: boolean;
-  webSearchEnabled: boolean;
-  selectedModel: string;
-  activeConversationId: string | null;
   conversations: Conversation[];
+  activeConversationId: string | null;
+  isStreaming: boolean;
+  webSearchEnabled: boolean;
+  localServerUrl: string;
   setWebSearchEnabled: (v: boolean) => void;
-  setSelectedModel: (m: string) => void;
-  sendMessage: (text: string) => Promise<void>;
-  clearMessages: () => void;
-  loadConversation: (id: string) => void;
+  setLocalServerUrl: (url: string) => void;
+  sendMessage: (text: string, attachments?: Attachment[]) => Promise<void>;
+  stopStreaming: () => void;
   newConversation: () => void;
-  browserOutput: string | null;
-  setBrowserOutput: (v: string | null) => void;
-  pendingBrowserJS: string | null;
-  setPendingBrowserJS: (v: string | null) => void;
+  loadConversation: (id: string) => void;
+  deleteConversation: (id: string) => void;
+  clearMessages: () => void;
 }
 
 const AgentContext = createContext<AgentContextValue | null>(null);
 
-const STORAGE_KEY = "rubyclaw_conversations";
-const OPENAI_BASE = "https://api.openai.com/v1";
+const STORAGE_KEY = "rubyclaw_v2_conversations";
 
-function makeId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+let msgCounter = 0;
+function genId(): string {
+  msgCounter++;
+  return `m-${Date.now()}-${msgCounter}-${Math.random().toString(36).slice(2, 7)}`;
 }
 
-const SYSTEM_PROMPT = `You are RubyClaw, an autonomous AI agent running on an Android device. You are powerful, precise, and proactive.
-
-You have access to the following tools. To use a tool, respond EXACTLY in this format (one tool per response, no other text before or after):
-
-TOOL_CALL: tool_name
-PARAMS: {"param1": "value1", "param2": "value2"}
-
-Available tools:
-- web_search: Search the web for real-time information. Params: {"query": "search query"}
-- browser_navigate: Navigate browser to a URL. Params: {"url": "https://example.com"}
-- browser_click: Click an element in the browser. Params: {"selector": "CSS selector or text"}
-- browser_fill: Fill a form field. Params: {"selector": "input selector", "value": "text to type"}
-- browser_extract: Extract text from current page. Params: {"selector": "CSS selector (optional)"}
-- open_app: Open an Android app by package name. Params: {"package": "com.example.app", "label": "App Name"}
-- set_alarm: Set an alarm. Params: {"hour": "9", "minute": "30", "label": "Wake up"}
-- create_note: Create a note or text file. Params: {"title": "Note Title", "content": "Note content"}
-- list_skills: List all available custom skills. Params: {}
-- use_skill: Use a custom skill. Params: {"skill_name": "skill_id", "input": "input text"}
-
-After receiving tool results, continue reasoning until you have a final answer for the user. When you have enough information, give a clear, concise response.
-
-Today's date: ${new Date().toLocaleDateString()}`;
+function getApiBase(): string {
+  const domain = process.env.EXPO_PUBLIC_DOMAIN;
+  if (domain) return `https://${domain}/api`;
+  return "/api";
+}
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [isThinking, setIsThinking] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
-  const [selectedModel, setSelectedModel] = useState("gpt-4o-mini");
-  const [browserOutput, setBrowserOutput] = useState<string | null>(null);
-  const [pendingBrowserJS, setPendingBrowserJS] = useState<string | null>(null);
-  const browserResultRef = useRef<string | null>(null);
-  const browserResolveRef = useRef<((v: string) => void) | null>(null);
+  const [localServerUrl, setLocalServerUrl] = useState("");
+  const abortRef = useRef<(() => void) | null>(null);
+  const messagesRef = useRef<Message[]>([]);
 
-  useEffect(() => {
-    loadConversations();
+  React.useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  React.useEffect(() => {
+    loadAllConversations();
   }, []);
 
-  useEffect(() => {
-    if (browserOutput !== null && browserResolveRef.current) {
-      browserResolveRef.current(browserOutput);
-      browserResolveRef.current = null;
-      setBrowserOutput(null);
-    }
-  }, [browserOutput]);
-
-  async function loadConversations() {
+  async function loadAllConversations() {
     try {
       const raw = await AsyncStorage.getItem(STORAGE_KEY);
       if (raw) {
@@ -118,25 +111,27 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }
 
-  async function saveConversations(convos: Conversation[]) {
+  async function persist(convos: Conversation[]) {
     try {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(convos));
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(convos.slice(0, 50)));
     } catch {}
   }
 
   function newConversation() {
-    const id = makeId();
+    const id = genId();
     const convo: Conversation = {
       id,
-      title: "New conversation",
+      title: "New chat",
       messages: [],
       createdAt: Date.now(),
     };
-    const updated = [convo, ...conversations];
-    setConversations(updated);
     setActiveConversationId(id);
     setMessages([]);
-    saveConversations(updated);
+    setConversations((prev) => {
+      const updated = [convo, ...prev];
+      persist(updated);
+      return updated;
+    });
   }
 
   function loadConversation(id: string) {
@@ -147,407 +142,237 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  function persistMessages(msgs: Message[], convId: string | null) {
-    if (!convId) return;
+  function deleteConversation(id: string) {
+    setConversations((prev) => {
+      const updated = prev.filter((c) => c.id !== id);
+      persist(updated);
+      return updated;
+    });
+    if (activeConversationId === id) {
+      setMessages([]);
+      setActiveConversationId(null);
+    }
+  }
+
+  function clearMessages() {
+    newConversation();
+  }
+
+  function saveMessages(convId: string, msgs: Message[]) {
     setConversations((prev) => {
       const updated = prev.map((c) => {
         if (c.id !== convId) return c;
-        const title =
-          msgs.find((m) => m.role === "user")?.content.slice(0, 40) ||
-          c.title;
-        return { ...c, messages: msgs, title };
+        const firstUserMsg = msgs.find((m) => m.role === "user")?.content;
+        return {
+          ...c,
+          messages: msgs,
+          title: firstUserMsg ? firstUserMsg.slice(0, 50) : c.title,
+        };
       });
-      saveConversations(updated);
+      persist(updated);
       return updated;
     });
   }
 
-  async function executeBrowserJS(js: string): Promise<string> {
-    return new Promise((resolve) => {
-      browserResolveRef.current = resolve;
-      setPendingBrowserJS(js);
-      setTimeout(() => {
-        if (browserResolveRef.current) {
-          browserResolveRef.current("Browser action completed (timeout)");
-          browserResolveRef.current = null;
-          setPendingBrowserJS(null);
-        }
-      }, 8000);
-    });
-  }
-
-  const tools: Record<string, AgentTool> = {
-    web_search: {
-      name: "web_search",
-      description: "Search the web",
-      parameters: { query: { type: "string", description: "Search query" } },
-      handler: async ({ query }) => {
-        try {
-          const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_redirect=1&no_html=1`;
-          const res = await fetch(url);
-          const data = await res.json();
-          const results: string[] = [];
-          if (data.AbstractText) results.push(data.AbstractText);
-          if (data.RelatedTopics) {
-            data.RelatedTopics.slice(0, 5).forEach((t: { Text?: string }) => {
-              if (t.Text) results.push(t.Text);
-            });
-          }
-          return results.length > 0
-            ? results.join("\n\n")
-            : `Search completed for: ${query}. No direct results found. Try rephrasing.`;
-        } catch {
-          return `Web search for "${query}" - network error. Please check connectivity.`;
-        }
-      },
-    },
-    browser_navigate: {
-      name: "browser_navigate",
-      description: "Navigate browser to URL",
-      parameters: { url: { type: "string", description: "URL to navigate to" } },
-      handler: async ({ url }) => {
-        const js = `window.location.href = '${url}'; 'Navigating to ${url}'`;
-        const result = await executeBrowserJS(js);
-        return `Browser navigated to ${url}. ${result}`;
-      },
-    },
-    browser_click: {
-      name: "browser_click",
-      description: "Click element in browser",
-      parameters: { selector: { type: "string", description: "CSS selector" } },
-      handler: async ({ selector }) => {
-        const js = `
-          (function() {
-            const el = document.querySelector('${selector}') || Array.from(document.querySelectorAll('*')).find(e => e.textContent.trim() === '${selector}');
-            if (el) { el.click(); return 'Clicked: ' + (el.textContent?.slice(0,50) || selector); }
-            return 'Element not found: ${selector}';
-          })()
-        `;
-        return await executeBrowserJS(js);
-      },
-    },
-    browser_fill: {
-      name: "browser_fill",
-      description: "Fill form field",
-      parameters: {
-        selector: { type: "string", description: "CSS selector" },
-        value: { type: "string", description: "Value to fill" },
-      },
-      handler: async ({ selector, value }) => {
-        const js = `
-          (function() {
-            const el = document.querySelector('${selector}');
-            if (el) { el.value = '${value}'; el.dispatchEvent(new Event('input', {bubbles:true})); return 'Filled ${selector} with: ${value}'; }
-            return 'Input not found: ${selector}';
-          })()
-        `;
-        return await executeBrowserJS(js);
-      },
-    },
-    browser_extract: {
-      name: "browser_extract",
-      description: "Extract text from page",
-      parameters: { selector: { type: "string", description: "CSS selector (optional)" } },
-      handler: async ({ selector }) => {
-        const js = selector
-          ? `(document.querySelector('${selector}') || document.body).innerText.slice(0, 2000)`
-          : `document.body.innerText.slice(0, 2000)`;
-        return await executeBrowserJS(js);
-      },
-    },
-    open_app: {
-      name: "open_app",
-      description: "Open Android app",
-      parameters: {
-        package: { type: "string", description: "Package name" },
-        label: { type: "string", description: "App label" },
-      },
-      handler: async ({ label }) => {
-        return `Attempting to open ${label}. Note: Deep app launching requires native Android permissions. Simulated action recorded.`;
-      },
-    },
-    set_alarm: {
-      name: "set_alarm",
-      description: "Set an alarm",
-      parameters: {
-        hour: { type: "string", description: "Hour (24h)" },
-        minute: { type: "string", description: "Minute" },
-        label: { type: "string", description: "Alarm label" },
-      },
-      handler: async ({ hour, minute, label }) => {
-        return `Alarm set for ${hour}:${minute.padStart(2, "0")} — "${label}". Alarm intent dispatched to Android system.`;
-      },
-    },
-    create_note: {
-      name: "create_note",
-      description: "Create a note",
-      parameters: {
-        title: { type: "string", description: "Note title" },
-        content: { type: "string", description: "Note content" },
-      },
-      handler: async ({ title, content }) => {
-        try {
-          const key = `note_${makeId()}`;
-          await AsyncStorage.setItem(key, JSON.stringify({ title, content, createdAt: Date.now() }));
-          return `Note created: "${title}" — saved to local storage.`;
-        } catch {
-          return `Failed to save note: "${title}"`;
-        }
-      },
-    },
-    list_skills: {
-      name: "list_skills",
-      description: "List custom skills",
-      parameters: {},
-      handler: async () => {
-        try {
-          const raw = await AsyncStorage.getItem("rubyclaw_skills");
-          if (!raw) return "No custom skills installed. Add skills in the Skills tab.";
-          const skills: CustomSkill[] = JSON.parse(raw);
-          return skills.map((s) => `• ${s.name} (${s.id}): ${s.description}`).join("\n");
-        } catch {
-          return "Error loading skills.";
-        }
-      },
-    },
-    use_skill: {
-      name: "use_skill",
-      description: "Use a custom skill",
-      parameters: {
-        skill_name: { type: "string", description: "Skill ID" },
-        input: { type: "string", description: "Input text" },
-      },
-      handler: async ({ skill_name, input }) => {
-        try {
-          const raw = await AsyncStorage.getItem("rubyclaw_skills");
-          if (!raw) return "No skills found.";
-          const skills: CustomSkill[] = JSON.parse(raw);
-          const skill = skills.find((s) => s.id === skill_name || s.name === skill_name);
-          if (!skill) return `Skill "${skill_name}" not found.`;
-          if (skill.type === "api") {
-            const res = await fetch(skill.endpoint!, {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ input }),
-            });
-            const text = await res.text();
-            return `Skill "${skill.name}" result: ${text.slice(0, 500)}`;
-          }
-          return `Skill "${skill.name}" executed with input: ${input}. Action: ${skill.action || "N/A"}`;
-        } catch {
-          return `Error executing skill "${skill_name}"`;
-        }
-      },
-    },
-  };
-
-  async function callLLM(history: Array<{ role: string; content: string }>): Promise<string> {
-    const apiKey = await AsyncStorage.getItem("rubyclaw_openai_key");
-    if (!apiKey) {
-      return simulateLocalLLM(history[history.length - 1]?.content || "");
+  function stopStreaming() {
+    if (abortRef.current) {
+      abortRef.current();
+      abortRef.current = null;
     }
-    try {
-      const res = await fetch(`${OPENAI_BASE}/chat/completions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({
-          model: selectedModel,
-          messages: [{ role: "system", content: SYSTEM_PROMPT }, ...history],
-          max_tokens: 1024,
-          temperature: 0.7,
-        }),
-      });
-      const data = await res.json();
-      return data.choices?.[0]?.message?.content || "No response from model.";
-    } catch {
-      return simulateLocalLLM(history[history.length - 1]?.content || "");
-    }
-  }
-
-  function simulateLocalLLM(userMessage: string): string {
-    const msg = userMessage.toLowerCase();
-    if (msg.includes("search") || msg.includes("find") || msg.includes("what is")) {
-      return `TOOL_CALL: web_search\nPARAMS: {"query": "${userMessage.replace(/"/g, "'")}"}`;
-    }
-    if (msg.includes("open") && (msg.includes("app") || msg.includes("chrome") || msg.includes("maps"))) {
-      const app = msg.includes("chrome") ? "com.android.chrome" : msg.includes("maps") ? "com.google.android.apps.maps" : "com.android.settings";
-      return `TOOL_CALL: open_app\nPARAMS: {"package": "${app}", "label": "App"}`;
-    }
-    if (msg.includes("alarm")) {
-      return `TOOL_CALL: set_alarm\nPARAMS: {"hour": "8", "minute": "0", "label": "RubyClaw Alarm"}`;
-    }
-    if (msg.includes("note") || msg.includes("save") || msg.includes("write")) {
-      return `TOOL_CALL: create_note\nPARAMS: {"title": "Note", "content": "${userMessage}"}`;
-    }
-    if (msg.includes("browse") || msg.includes("navigate") || msg.includes("website") || msg.includes("http")) {
-      const urlMatch = userMessage.match(/https?:\/\/[^\s]+/);
-      const url = urlMatch ? urlMatch[0] : "https://www.google.com";
-      return `TOOL_CALL: browser_navigate\nPARAMS: {"url": "${url}"}`;
-    }
-
-    const responses = [
-      `I'm RubyClaw, your autonomous AI agent. I can help you search the web, automate browser tasks, open apps, set alarms, and much more. What would you like me to do?`,
-      `I'm ready to assist! I can:\n• Search the web for real-time info\n• Automate browser tasks\n• Open apps and set alarms\n• Create notes and files\n• Use custom skills\n\nWhat's your task?`,
-      `Understood. I'm analyzing your request... I currently have ${Object.keys(tools).length} tools available. Could you give me more details so I can choose the right action?`,
-    ];
-    return responses[Math.floor(Math.random() * responses.length)];
-  }
-
-  function parseToolCall(content: string): { tool: string; params: Record<string, string> } | null {
-    const toolMatch = content.match(/TOOL_CALL:\s*(\w+)/);
-    const paramsMatch = content.match(/PARAMS:\s*(\{[\s\S]*?\})/);
-    if (!toolMatch) return null;
-    let params: Record<string, string> = {};
-    if (paramsMatch) {
-      try {
-        params = JSON.parse(paramsMatch[1]);
-      } catch {}
-    }
-    return { tool: toolMatch[1], params };
+    setIsStreaming(false);
+    setMessages((prev) =>
+      prev.map((m) => (m.isStreaming ? { ...m, isStreaming: false } : m))
+    );
   }
 
   const sendMessage = useCallback(
-    async (text: string) => {
-      if (isThinking) return;
+    async (text: string, attachments?: Attachment[]) => {
+      if (isStreaming) return;
 
       let convId = activeConversationId;
       if (!convId) {
-        convId = makeId();
+        convId = genId();
         const convo: Conversation = {
           id: convId,
-          title: text.slice(0, 40),
+          title: text.slice(0, 50),
           messages: [],
           createdAt: Date.now(),
         };
+        setActiveConversationId(convId);
         setConversations((prev) => {
           const updated = [convo, ...prev];
-          saveConversations(updated);
+          persist(updated);
           return updated;
         });
-        setActiveConversationId(convId);
       }
 
       const userMsg: Message = {
-        id: makeId(),
+        id: genId(),
         role: "user",
         content: text,
         timestamp: Date.now(),
+        attachments,
       };
 
-      const nextMessages = [...messages, userMsg];
-      setMessages(nextMessages);
-      persistMessages(nextMessages, convId);
-      setIsThinking(true);
+      const snapshot = [...messagesRef.current, userMsg];
+      setMessages(snapshot);
 
-      try {
-        const history = nextMessages.map((m) => ({
-          role: m.role === "agent" ? "assistant" : m.role === "tool" ? "tool" : m.role === "system" ? "system" : "user",
-          content: m.content,
+      setIsStreaming(true);
+      let aborted = false;
+      abortRef.current = () => {
+        aborted = true;
+      };
+
+      // Build history for backend — only user/assistant messages
+      const chatHistory = snapshot
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({
+          role: m.role as "user" | "assistant",
+          content: m.role === "user" && m.attachments?.length
+            ? `${m.content}\n[Attached: ${m.attachments.map((a) => a.name).join(", ")}]`
+            : m.content,
         }));
 
-        if (webSearchEnabled && !text.toLowerCase().includes("search")) {
-          history[history.length - 1].content = `[Web search enabled] ${text}`;
-        }
+      // Use local llama.cpp server if configured, else Replit AI backend
+      const endpoint = localServerUrl
+        ? `${localServerUrl.replace(/\/$/, "")}/v1/chat/completions`
+        : `${getApiBase()}/chat`;
 
-        let iteration = 0;
-        const maxIterations = 5;
-        let currentMessages = [...nextMessages];
+      let currentMessages = [...snapshot];
 
-        while (iteration < maxIterations) {
-          const llmHistory = currentMessages.map((m) => ({
-            role: m.role === "agent" ? "assistant" : m.role === "tool" ? "user" : m.role,
-            content: m.role === "tool" ? `[Tool Result - ${m.toolName}]: ${m.content}` : m.content,
-          }));
-
-          const response = await callLLM(llmHistory);
-          const toolCall = parseToolCall(response);
-
-          if (toolCall) {
-            const thinkingMsg: Message = {
-              id: makeId(),
-              role: "agent",
-              content: response,
-              timestamp: Date.now(),
-              isStreaming: false,
-            };
-            currentMessages = [...currentMessages, thinkingMsg];
-            setMessages([...currentMessages]);
-
-            const tool = tools[toolCall.tool];
-            let toolResult = `Tool "${toolCall.tool}" not found.`;
-            if (tool) {
-              try {
-                toolResult = await tool.handler(toolCall.params);
-              } catch (e: unknown) {
-                toolResult = `Tool error: ${e instanceof Error ? e.message : String(e)}`;
-              }
+      try {
+        if (localServerUrl) {
+          // llama.cpp server API (OpenAI-compatible)
+          await streamLlamaServer(
+            endpoint,
+            chatHistory,
+            (chunk) => {
+              if (aborted) return;
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                if (last?.isStreaming && last.role === "assistant") {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = {
+                    ...last,
+                    content: last.content + chunk,
+                  };
+                  currentMessages = updated;
+                  return updated;
+                } else {
+                  const newMsg: Message = {
+                    id: genId(),
+                    role: "assistant",
+                    content: chunk,
+                    timestamp: Date.now(),
+                    isStreaming: true,
+                  };
+                  currentMessages = [...prev, newMsg];
+                  return currentMessages;
+                }
+              });
             }
-
-            const toolMsg: Message = {
-              id: makeId(),
-              role: "tool",
-              content: toolResult,
-              timestamp: Date.now(),
-              toolName: toolCall.tool,
-            };
-            currentMessages = [...currentMessages, toolMsg];
-            setMessages([...currentMessages]);
-            iteration++;
-          } else {
-            const agentMsg: Message = {
-              id: makeId(),
-              role: "agent",
-              content: response,
-              timestamp: Date.now(),
-            };
-            currentMessages = [...currentMessages, agentMsg];
-            setMessages([...currentMessages]);
-            persistMessages(currentMessages, convId);
-            break;
-          }
+          );
+        } else {
+          // Replit AI backend with tool calling
+          await streamBackend(
+            endpoint,
+            chatHistory,
+            webSearchEnabled,
+            {
+              onContent: (chunk) => {
+                if (aborted) return;
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  if (last?.isStreaming && last.role === "assistant") {
+                    const updated = [...prev];
+                    updated[updated.length - 1] = {
+                      ...last,
+                      content: last.content + chunk,
+                    };
+                    currentMessages = updated;
+                    return updated;
+                  } else {
+                    const newMsg: Message = {
+                      id: genId(),
+                      role: "assistant",
+                      content: chunk,
+                      timestamp: Date.now(),
+                      isStreaming: true,
+                    };
+                    currentMessages = [...prev, newMsg];
+                    return currentMessages;
+                  }
+                });
+              },
+              onToolCall: (toolEvent) => {
+                if (aborted) return;
+                const toolMsg: Message = {
+                  id: genId(),
+                  role: "tool_call",
+                  content: `Calling ${toolEvent.name}...`,
+                  timestamp: Date.now(),
+                  toolEvent,
+                };
+                currentMessages = [...currentMessages, toolMsg];
+                setMessages([...currentMessages]);
+              },
+              onToolResult: (toolEvent) => {
+                if (aborted) return;
+                const resultMsg: Message = {
+                  id: genId(),
+                  role: "tool_result",
+                  content: toolEvent.result || "",
+                  timestamp: Date.now(),
+                  toolEvent,
+                };
+                currentMessages = [...currentMessages, resultMsg];
+                setMessages([...currentMessages]);
+              },
+            }
+          );
         }
-      } catch (e: unknown) {
-        const errMsg: Message = {
-          id: makeId(),
-          role: "agent",
-          content: `Error: ${e instanceof Error ? e.message : String(e)}`,
-          timestamp: Date.now(),
-        };
-        setMessages((prev) => [...prev, errMsg]);
+      } catch (e) {
+        if (!aborted) {
+          const errMsg: Message = {
+            id: genId(),
+            role: "assistant",
+            content: `Error: ${e instanceof Error ? e.message : String(e)}\n\nCheck your connection or try again.`,
+            timestamp: Date.now(),
+          };
+          currentMessages = [...currentMessages, errMsg];
+          setMessages(currentMessages);
+        }
       } finally {
-        setIsThinking(false);
+        setIsStreaming(false);
+        setMessages((prev) => {
+          const finalized = prev.map((m) =>
+            m.isStreaming ? { ...m, isStreaming: false } : m
+          );
+          saveMessages(convId!, finalized);
+          return finalized;
+        });
       }
     },
-    [messages, isThinking, webSearchEnabled, selectedModel, activeConversationId, conversations]
+    [isStreaming, activeConversationId, webSearchEnabled, localServerUrl]
   );
-
-  function clearMessages() {
-    setMessages([]);
-    newConversation();
-  }
 
   return (
     <AgentContext.Provider
       value={{
         messages,
-        isThinking,
-        webSearchEnabled,
-        selectedModel,
-        activeConversationId,
         conversations,
+        activeConversationId,
+        isStreaming,
+        webSearchEnabled,
+        localServerUrl,
         setWebSearchEnabled,
-        setSelectedModel,
+        setLocalServerUrl,
         sendMessage,
-        clearMessages,
-        loadConversation,
+        stopStreaming,
         newConversation,
-        browserOutput,
-        setBrowserOutput,
-        pendingBrowserJS,
-        setPendingBrowserJS,
+        loadConversation,
+        deleteConversation,
+        clearMessages,
       }}
     >
       {children}
@@ -555,15 +380,104 @@ export function AgentProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export interface CustomSkill {
-  id: string;
-  name: string;
-  description: string;
-  type: "api" | "action" | "prompt";
-  endpoint?: string;
-  action?: string;
-  promptTemplate?: string;
-  createdAt: number;
+async function streamBackend(
+  endpoint: string,
+  messages: Array<{ role: string; content: string }>,
+  webSearch: boolean,
+  handlers: {
+    onContent: (chunk: string) => void;
+    onToolCall: (event: ToolEvent) => void;
+    onToolResult: (event: ToolEvent) => void;
+  }
+) {
+  const { fetch } = await import("expo/fetch");
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
+    body: JSON.stringify({ messages, webSearch }),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text().catch(() => "Unknown error");
+    throw new Error(`Server error ${res.status}: ${errText}`);
+  }
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (!raw || raw === "[DONE]") continue;
+      try {
+        const parsed = JSON.parse(raw) as {
+          content?: string;
+          toolCall?: { name: string; args: Record<string, unknown> };
+          toolResult?: { name: string; result: string };
+          error?: string;
+          done?: boolean;
+        };
+        if (parsed.content) handlers.onContent(parsed.content);
+        if (parsed.toolCall) handlers.onToolCall(parsed.toolCall);
+        if (parsed.toolResult) handlers.onToolResult(parsed.toolResult);
+        if (parsed.error) throw new Error(parsed.error);
+      } catch {}
+    }
+  }
+}
+
+async function streamLlamaServer(
+  endpoint: string,
+  messages: Array<{ role: string; content: string }>,
+  onChunk: (chunk: string) => void
+) {
+  const { fetch } = await import("expo/fetch");
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages,
+      stream: true,
+      temperature: 0.7,
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!res.ok) throw new Error(`llama.cpp server error: ${res.status}`);
+
+  const reader = res.body?.getReader();
+  if (!reader) throw new Error("No response body");
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const raw = line.slice(6).trim();
+      if (raw === "[DONE]") break;
+      try {
+        const parsed = JSON.parse(raw) as { choices?: Array<{ delta?: { content?: string } }> };
+        const chunk = parsed.choices?.[0]?.delta?.content;
+        if (chunk) onChunk(chunk);
+      } catch {}
+    }
+  }
 }
 
 export function useAgent() {
