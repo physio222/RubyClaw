@@ -1,0 +1,27 @@
+kind = "mobile"
+previewPath = "/"
+title = "RubyClaw"
+version = "1.0.0"
+id = "artifacts/rubyclaw"
+router = "expo-domain"
+
+[[integratedSkills]]
+name = "expo"
+version = "1.0.0"
+
+[[services]]
+ensurePreviewReachable = "/status"
+name = "expo"
+paths = [ "/" ]
+localPort = 22189
+
+[services.development]
+run = "pnpm --filter @workspace/rubyclaw run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/rubyclaw", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/rubyclaw", "run", "serve" ]
+
+[services.env]
+PORT = "22189"
+BASE_PATH = "/"
