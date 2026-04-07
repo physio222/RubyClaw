@@ -19,9 +19,7 @@ services:
       - key: PORT
         value: 3000
       - key: DATABASE_URL
-        fromDatabase:
-          name: rubyclaw-db
-          property: connectionString
+        sync: false # Set this in Render Dashboard to your Neon.tech connection string
       # OpenAI/AI API keys — optional, users provide their own in-app
       - key: AI_INTEGRATIONS_OPENAI_API_KEY
         sync: false
@@ -33,10 +31,3 @@ services:
       # Logging
       - key: LOG_LEVEL
         value: info
-
-databases:
-  - name: rubyclaw-db
-    plan: free
-    databaseName: rubyclaw
-    user: rubyclaw_user
-    postgresMajorVersion: "16"
