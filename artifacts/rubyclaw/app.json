@@ -2,6 +2,7 @@
   "expo": {
     "name": "RubyClaw",
     "slug": "rubyclaw",
+    "owner": "physiodoc2",
     "version": "2.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -24,18 +25,19 @@
       },
       "package": "com.rubyclaw.app",
       "permissions": [
-        "INTERNET",
-        "ACCESS_NETWORK_STATE",
-        "CAMERA",
-        "READ_MEDIA_IMAGES",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "RECEIVE_BOOT_COMPLETED",
-        "SCHEDULE_EXACT_ALARM",
-        "USE_EXACT_ALARM",
-        "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_CONNECTED_DEVICE",
-        "VIBRATE"
+        "android.permission.INTERNET",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.CAMERA",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE",
+        "android.permission.VIBRATE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -46,7 +48,7 @@
       [
         "expo-router",
         {
-          "origin": "https://replit.com/"
+          "origin": "https://rubyclaw-api.onrender.com"
         }
       ],
       "expo-font",
@@ -65,7 +67,7 @@
     },
     "extra": {
       "eas": {
-        "projectId": "rubyclaw-agentic-ai"
+        "projectId": "87539ee3-f36e-48af-8d0c-46d18c1491e4"
       }
     }
   }
