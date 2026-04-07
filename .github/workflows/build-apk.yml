@@ -1,0 +1,77 @@
+# ============================================================================
+# RubyClaw APK Build — One-Click Android Build
+# Manual dispatch: Go to Actions → "Build APK" → Run workflow
+# ============================================================================
+
+name: 📱 Build APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: 'Build profile'
+        required: true
+        default: 'preview'
+        type: choice
+        options:
+          - preview    # APK for direct install
+          - production # AAB for Play Store
+
+permissions:
+  contents: write   # Needed for creating releases
+
+jobs:
+  build:
+    name: Build Android ${{ inputs.profile }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: artifacts/rubyclaw
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: 📦 Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
+      - name: 📦 Install dependencies
+        run: |
+          cd ../..
+          pnpm install --no-frozen-lockfile
+
+      - name: 🔧 Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: 📱 Build Android
+        run: |
+          eas build \
+            --platform android \
+            --profile ${{ inputs.profile }} \
+            --non-interactive \
+            --no-wait
+        env:
+          EXPO_PUBLIC_API_URL: ${{ secrets.API_URL || 'https://rubyclaw-api.onrender.com' }}
+
+      - name: 📋 Build Info
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  RubyClaw APK Build"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Profile: ${{ inputs.profile }}"
+          echo "  Commit:  ${{ github.sha }}"
+          echo "  Time:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+          echo "  📥 Download your APK from:"
+          echo "     https://expo.dev/accounts/YOUR_USERNAME/projects/rubyclaw/builds"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

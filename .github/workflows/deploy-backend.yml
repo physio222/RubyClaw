@@ -1,0 +1,59 @@
+# ============================================================================
+# RubyClaw Backend — Auto Deploy to Render.com
+# Triggers on push to main branch or manual dispatch (one-click)
+# ============================================================================
+
+name: 🚀 Deploy Backend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'artifacts/api-server/**'
+      - 'lib/**'
+      - 'Dockerfile'
+      - 'render.yaml'
+      - 'package.json'
+      - 'pnpm-workspace.yaml'
+      - 'pnpm-lock.yaml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Deployment reason'
+        required: false
+        default: 'Manual deployment'
+
+jobs:
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔔 Trigger Render Deploy
+        run: |
+          echo "🚀 Deploying RubyClaw backend..."
+          echo "Reason: ${{ github.event.inputs.reason || 'Push to main' }}"
+          
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" ]; then
+            echo "⚠️ RENDER_DEPLOY_HOOK_URL not set. Render will auto-deploy from GitHub connection."
+            echo "To enable webhook deploys, add RENDER_DEPLOY_HOOK_URL to GitHub Secrets."
+            exit 0
+          fi
+          
+          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+            --fail \
+            --silent \
+            --show-error \
+            --max-time 30
+          
+          echo "✅ Deploy triggered successfully!"
+
+      - name: 📋 Deployment Info
+        run: |
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  RubyClaw Backend Deployment"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "  Branch:  ${{ github.ref_name }}"
+          echo "  Commit:  ${{ github.sha }}"
+          echo "  Author:  ${{ github.actor }}"
+          echo "  Time:    $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

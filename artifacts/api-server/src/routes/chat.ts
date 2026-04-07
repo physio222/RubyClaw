@@ -1,8 +1,16 @@
 import { Router } from "express";
-import { openai } from "@workspace/integrations-openai-ai-server";
+import { openai, isAIConfigured } from "@workspace/integrations-openai-ai-server";
 import { logger } from "../lib/logger";
+import { sanitizeInput } from "../middlewares/security";
 
 const router = Router();
+
+// ============================================================================
+// Constants
+// ============================================================================
+const MAX_MESSAGE_LENGTH = 10000;
+const MAX_MESSAGES_COUNT = 50;
+const REQUEST_TIMEOUT_MS = 60000;
 
 const SYSTEM_PROMPT = `You are RubyClaw, a powerful autonomous AI agent. You are helpful, precise, and honest.
 
@@ -88,6 +96,9 @@ const TOOLS: Parameters<typeof openai.chat.completions.create>[0]["tools"] = [
   },
 ];
 
+// ============================================================================
+// Tool Execution
+// ============================================================================
 async function executeToolCall(name: string, args: Record<string, string>): Promise<string> {
   try {
     if (name === "web_search") {
@@ -122,6 +133,12 @@ async function executeToolCall(name: string, args: Record<string, string>): Prom
 
     if (name === "fetch_url") {
       const url = args.url || "";
+      // Basic URL validation
+      try {
+        new URL(url);
+      } catch {
+        return `Invalid URL: "${url}"`;
+      }
       const jinaUrl = `https://r.jina.ai/${url}`;
       const res = await fetch(jinaUrl, {
         signal: AbortSignal.timeout(10000),
@@ -152,6 +169,9 @@ async function executeToolCall(name: string, args: Record<string, string>): Prom
   }
 }
 
+// ============================================================================
+// Chat Route
+// ============================================================================
 router.post("/chat", async (req, res) => {
   const { messages, webSearch, skills, systemPrompt } = req.body as {
     messages: Array<{ role: string; content: string }>;
@@ -160,11 +180,40 @@ router.post("/chat", async (req, res) => {
     systemPrompt?: string;
   };
 
+  // Input validation
   if (!messages || !Array.isArray(messages)) {
     res.status(400).json({ error: "messages array required" });
     return;
   }
 
+  if (messages.length > MAX_MESSAGES_COUNT) {
+    res.status(400).json({ error: `Maximum ${MAX_MESSAGES_COUNT} messages allowed per request` });
+    return;
+  }
+
+  // Validate and sanitize each message
+  for (const msg of messages) {
+    if (!msg.role || !msg.content) {
+      res.status(400).json({ error: "Each message must have role and content" });
+      return;
+    }
+    if (msg.content.length > MAX_MESSAGE_LENGTH) {
+      res.status(400).json({ error: `Message content exceeds ${MAX_MESSAGE_LENGTH} character limit` });
+      return;
+    }
+    // Sanitize input
+    msg.content = sanitizeInput(msg.content);
+  }
+
+  // Check if cloud AI is configured
+  if (!isAIConfigured()) {
+    res.status(503).json({
+      error: "Cloud AI not configured on server. Please use local LLM mode in the app, or configure AI_INTEGRATIONS_OPENAI_API_KEY on the server.",
+    });
+    return;
+  }
+
+  // Set SSE headers
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache, no-transform");
   res.setHeader("Connection", "keep-alive");
@@ -174,6 +223,13 @@ router.post("/chat", async (req, res) => {
   const sendEvent = (data: object) => {
     res.write(`data: ${JSON.stringify(data)}\n\n`);
   };
+
+  // Request timeout
+  const timeout = setTimeout(() => {
+    logger.warn("Chat request timeout");
+    sendEvent({ error: "Request timed out. Please try again." });
+    res.end();
+  }, REQUEST_TIMEOUT_MS);
 
   try {
     const sysContent = [
@@ -251,27 +307,49 @@ router.post("/chat", async (req, res) => {
       }
     }
 
+    clearTimeout(timeout);
     sendEvent({ done: true });
     res.end();
   } catch (e) {
+    clearTimeout(timeout);
     logger.error({ err: e }, "Chat route error");
     sendEvent({ error: e instanceof Error ? e.message : "Unknown error" });
     res.end();
   }
 });
 
+// ============================================================================
+// Search Route
+// ============================================================================
 router.post("/search", async (req, res) => {
   const { query } = req.body as { query?: string };
   if (!query) {
     res.status(400).json({ error: "query required" });
     return;
   }
+  if (query.length > 500) {
+    res.status(400).json({ error: "Query too long (max 500 characters)" });
+    return;
+  }
   try {
-    const result = await executeToolCall("web_search", { query });
+    const result = await executeToolCall("web_search", { query: sanitizeInput(query) });
     res.json({ result });
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
+});
+
+// ============================================================================
+// AI Status Route — Check if cloud AI is configured
+// ============================================================================
+router.get("/ai-status", (_req, res) => {
+  res.json({
+    cloudAI: isAIConfigured(),
+    localLLM: true, // Always supported
+    message: isAIConfigured()
+      ? "Cloud AI is configured and ready."
+      : "Cloud AI not configured. Use local LLM mode for free AI.",
+  });
 });
 
 export default router;

@@ -1,0 +1,42 @@
+# ============================================================================
+# Render.com Infrastructure-as-Code
+# Deploy with: Connect GitHub repo → Render auto-detects this file
+# ============================================================================
+
+services:
+  - type: web
+    name: rubyclaw-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    repo: https://github.com/physio222/RubyClaw.git
+    branch: main
+    plan: free
+    healthCheckPath: /api/healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: DATABASE_URL
+        fromDatabase:
+          name: rubyclaw-db
+          property: connectionString
+      # OpenAI/AI API keys — optional, users provide their own in-app
+      - key: AI_INTEGRATIONS_OPENAI_API_KEY
+        sync: false
+      - key: AI_INTEGRATIONS_OPENAI_BASE_URL
+        sync: false
+      # CORS — allow mobile app
+      - key: ALLOWED_ORIGINS
+        value: "*"
+      # Logging
+      - key: LOG_LEVEL
+        value: info
+
+databases:
+  - name: rubyclaw-db
+    plan: free
+    databaseName: rubyclaw
+    user: rubyclaw_user
+    postgresMajorVersion: "16"

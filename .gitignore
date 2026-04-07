@@ -56,3 +56,4 @@ GoogleService-Info.plist
 # Replit
 .cache/
 .local/
+.config/

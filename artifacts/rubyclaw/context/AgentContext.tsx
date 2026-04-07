@@ -78,9 +78,12 @@ function genId(): string {
 }
 
 function getApiBase(): string {
+  // Priority: EXPO_PUBLIC_API_URL (production) > EXPO_PUBLIC_DOMAIN (Replit) > localhost
+  const apiUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (apiUrl) return `${apiUrl.replace(/\/$/, "")}/api`;
   const domain = process.env.EXPO_PUBLIC_DOMAIN;
   if (domain) return `https://${domain}/api`;
-  return "/api";
+  return "http://localhost:3000/api";
 }
 
 export function AgentProvider({ children }: { children: React.ReactNode }) {
