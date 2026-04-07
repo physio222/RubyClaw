@@ -1,0 +1,22 @@
+# Ignore monorepo files not needed for mobile build
+artifacts/api-server/
+artifacts/mockup-sandbox/
+lib/
+scripts/
+.github/
+.agents/
+attached_assets/
+Dockerfile
+.dockerignore
+render.yaml
+.env
+.env.example
+.replit
+replit.nix
+replit.md
+*.toml
+build-log.json
+node_modules/
+.expo/
+dist/
+.config/

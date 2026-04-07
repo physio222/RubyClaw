@@ -1,0 +1,59 @@
+﻿node.exe : - Fetching the buildΓÇª
+At line:1 char:1
++ & "C:\Program Files\nodejs/node.exe" "C:\Program Files\nodejs/node_mo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (- Fetching the buildΓÇª:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ΓêÜ Found a matching build for the project @physiodoc2/rubyclaw
+{
+  "id": "ca60b8f6-a83d-483b-bdf3-dc08e6881dba",
+  "status": "ERRORED",
+  "platform": "ANDROID",
+  "error": {
+    "errorCode": "UNKNOWN_ERROR",
+    "message": "Unknown error. See logs of the Build complete hook build phase for more information."
+  },
+  "artifacts": {},
+  "fingerprint": {
+    "id": "019d6754-ddce-72e8-b261-b13c67ac9680",
+    "hash": "b7c13072acb2f54d8a8e1c85f4067ac35e62d8ae"
+  },
+  "initiatingActor": {
+    "id": "4996e325-890d-4574-a080-2be16eef18e0",
+    "displayName": "physiodoc2"
+  },
+  "logFiles": [
+    "https://job-logs.eascdn.net/production/ca60b8f6-a83d-483b-bdf3-dc08e6881dba/1775555108501-bc7e7ac1-b1f2-4e2a-8087-950f480d905d.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260407%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260407T094839Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=4f4356e141d8b153b60dd46ddf7527f4ea5809f8353f0bd6645f345234617df2031cfde9e9634a39e886839f6c8cac264f8cd476f5870a975e4f2fdabdbf6cc2a70c37b5eaf40e457f34006127360d558781c5fd49a8feca232e950e32ced098bc71aef1fdc32e035235f2731f519ca0f3fb2ede019a87a7dbd9c45611cff62ab5655218185f7b450dba7a31dd85936fb7cd4b3a4b97a429d59a690013da0dbfd0172a3de8a086a71abbb564155945f2712949fbe559ce429ffad3dac60f78912f9c0b3bcccef97f1ea094f6069a7e1b9b86866b5960907554f80555fc234bac5795636116bd710fd4d64a745470756b51ac42d892df3e7103c6623b7c2e0190",
+    "https://job-logs.eascdn.net/production/ca60b8f6-a83d-483b-bdf3-dc08e6881dba/1775555118507-7c36ae4e-6b36-4fb0-9c7a-989a85716e1c.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260407%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260407T094839Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=b5633d291e019d4d674f2540d61cb0b2d8f90e3e99a06142978567674f5825f1c6d493a46e16a86b8790d1379282485688c1db858f155407e17a37c95efc7ad6fe9d753621267cbce3f33aeda0a5e2f47f9e9cc58c865a5674d175dade11a844114a424898e4ea7a5133f8192abb519bed1758e0d44c983c3a38ada9eef36ca9043ca0d4973a5bd343915daa9e565e3d875a4b0c5d4114e1687ffc21c97f2f0dfc6394bfbe76bad9d79512943ace4bad002ae74cc07f236b251825aeebd993fd412953af807364d25c3fb13c6074579a72eb353df00c83ebb9bea5970bd92326d51a6cfc565b573246588e9ae5537bf8388947e322d76a40b4f081ff6044a423",
+    "https://job-logs.eascdn.net/production/ca60b8f6-a83d-483b-bdf3-dc08e6881dba/1775555118733-760912bb-51b0-4dd3-96c3-09289a6e57eb.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260407%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260407T094839Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=982a5805d7b943feafde92bf8ecfac75640882680a10ed96bb4fb18bda5041f4076d93ffca4f07ec91578dc9fc8bc9fad129c948efc1326b6f603eba84a54321fc4546640c99400789f499b3b2be88f94d8b8b888824e8a13f9d9eae61fdc666fc3f69592fde0e62f0e28504cdd7e29e94b9dbad774da98739eceac672a9c621fb3275a6cad5b5e910ec7ad17ee31c55d1812ad2f9a4418dc257e9558b95532c5d9f6d77e024d4a4fdb51891232109e5d160bd088b3d4f02621cbb2d86cf8e93b230cf4d923059207b0de32be5f1c607440bcdbece59d1597c2c9954ca7cd6eca96b612fd234d6c7e280178179725ea94065402fa6cd8e2bc3867102876d2e7c",
+    "https://job-logs.eascdn.net/production/ca60b8f6-a83d-483b-bdf3-dc08e6881dba/1775555118922-3b77f16d-e4a3-476f-b923-49754ea04da1.txt?X-Goog-Algorithm=GOOG4-RSA-SHA256&X-Goog-Credential=www-production%40exponentjs.iam.gserviceaccount.com%2F20260407%2Fauto%2Fstorage%2Fgoog4_request&X-Goog-Date=20260407T094839Z&X-Goog-Expires=900&X-Goog-SignedHeaders=host&X-Goog-Signature=4ef78c6a40e73bc68436df2a45d3f3bcff2eb3b13ccf28cd25e75ac11da1935f872147be4d729de4bfd5012d051210000a7a08eaaaad8b1751f8177e943f1a1b3f9495fdffd61b9bdb0ff708058d916901e009a104770d17ddabe1e560c5991fe77c7180efd55043c0282f5beebe07397f9d24cc0dffb59c84ef0f04bccbb2623a868db683e6a55105896cae4476bdbaaddf105a5c8615622a13c27b6a51abc892dbdccfe2e3372d6f71d27b38dbc3154a6ea4635412df05babde114a854c8aecc5ff5c76a63067b73ffca186a85d9fdc515afa1955f55176377c700201fb82081ebc2456f3580bec0763d47f949564225a6b08cb4d58a1e9c15627b0eff7297"
+  ],
+  "project": {
+    "id": "87539ee3-f36e-48af-8d0c-46d18c1491e4",
+    "name": "rubyclaw",
+    "slug": "rubyclaw",
+    "ownerAccount": {
+      "id": "b2f6800c-48f8-4490-b22f-8fa34f79bd3e",
+      "name": "physiodoc2"
+    }
+  },
+  "distribution": "INTERNAL",
+  "buildProfile": "preview",
+  "sdkVersion": "54.0.0",
+  "appVersion": "2.0.0",
+  "appBuildVersion": "1",
+  "gitCommitHash": "425929c88e5cddc6f120229d80c36bef3ebafcdc",
+  "gitCommitMessage": "Configure EAS project with proper ID and owner for APK builds",
+  "priority": "NORMAL_PLUS",
+  "createdAt": "2026-04-07T09:45:08.258Z",
+  "updatedAt": "2026-04-07T09:46:18.445Z",
+  "completedAt": "2026-04-07T09:46:16.233Z",
+  "expirationDate": "2026-04-21T09:45:08.289Z",
+  "isForIosSimulator": false,
+  "metrics": {
+    "buildWaitTime": 138,
+    "buildQueueTime": 48630,
+    "buildDuration": 18780
+  }
+}
