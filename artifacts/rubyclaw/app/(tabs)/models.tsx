@@ -2,7 +2,7 @@ import { Feather } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Haptics from "expo-haptics";
 import * as FileSystem from "expo-file-system";
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -300,7 +300,7 @@ export default function ModelsScreen() {
         model.downloadUrl,
         destPath,
         {},
-        (progress) => {
+        (progress: FileSystem.DownloadProgressData) => {
           updateStatus(model.id, {
             status: "downloading",
             downloadedBytes: progress.totalBytesWritten,
@@ -487,4 +487,3 @@ const cardStyles = StyleSheet.create({
   iconBtn: { padding: 8 },
 });
 
-const { useRef } = React;

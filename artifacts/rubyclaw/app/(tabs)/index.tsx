@@ -27,7 +27,7 @@ function formatTime(ts: number) {
 
 function renderMarkdown(text: string, colors: ReturnType<typeof useColors>) {
   // Simple markdown: **bold**, `code`, code blocks
-  const parts: JSX.Element[] = [];
+  const parts: React.ReactElement[] = [];
   const lines = text.split("\n");
   let i = 0;
   let key = 0;

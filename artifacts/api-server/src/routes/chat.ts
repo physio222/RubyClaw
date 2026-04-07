@@ -108,9 +108,9 @@ async function executeToolCall(name: string, args: Record<string, string>): Prom
       if (data.Definition) parts.push(`Definition: ${data.Definition}`);
       if (data.RelatedTopics?.length) {
         const topics = data.RelatedTopics
-          .filter((t) => t.Text)
+          .filter((t: { Text?: string; FirstURL?: string }) => t.Text)
           .slice(0, 5)
-          .map((t) => `• ${t.Text}`)
+          .map((t: { Text?: string; FirstURL?: string }) => `• ${t.Text}`)
           .join("\n");
         if (topics) parts.push(`Related:\n${topics}`);
       }
@@ -182,7 +182,8 @@ router.post("/chat", async (req, res) => {
       webSearch ? "\nWeb search is enabled — use the web_search tool for current information." : "",
     ].join("");
 
-    const chatMessages: Array<{ role: "system" | "user" | "assistant" | "tool"; content: string; tool_call_id?: string; name?: string; tool_calls?: unknown[] }> = [
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const chatMessages: any[] = [
       { role: "system", content: sysContent },
       ...messages.map((m) => ({
         role: m.role as "user" | "assistant",
@@ -190,7 +191,7 @@ router.post("/chat", async (req, res) => {
       })),
     ];
 
-    const tools = webSearch ? TOOLS : TOOLS.filter((t) => t.function.name !== "web_search");
+    const tools = webSearch ? TOOLS : TOOLS.filter((t) => (t as { function: { name: string } }).function.name !== "web_search");
 
     let iterCount = 0;
     const MAX_ITER = 6;
@@ -228,7 +229,8 @@ router.post("/chat", async (req, res) => {
       }
 
       // Execute tool calls
-      for (const tc of msg.tool_calls) {
+      for (const rawTc of msg.tool_calls) {
+        const tc = rawTc as { id: string; function: { name: string; arguments: string } };
         let toolArgs: Record<string, string> = {};
         try {
           toolArgs = JSON.parse(tc.function.arguments);
